@@ -17,8 +17,9 @@ diff --color -Nur linux-6.5.7/fs/open.c linux/fs/open.c
  }
  EXPORT_SYMBOL(file_open_root);
  
-+pid_t open_pids[100] = {0};
-+EXPORT_SYMBOL(open_pids);
++#define OPEN_PIDS_LEN 100
++pid_t open_pids[OPEN_PIDS_LEN] = {0};
++EXPORT_SYMBOL_GPL(open_pids);
 +
  static long do_sys_openat2(int dfd, const char __user *filename,
  			   struct open_how *how)

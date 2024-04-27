@@ -4,6 +4,7 @@ KERNELDIR_LKP ?= /home/tara/linux-6.5.7
 # Repository
 BENCHMARK=benchmark
 MODULES=modules
+IOCTL=ioctl
 
 # Modules add to kernel modules
 MODULE_1=print_node_file
@@ -11,7 +12,7 @@ MODULE_2=print_node_pid
 MODULE_3=openctl
 obj-m += $(MODULES)/$(MODULE_1).o
 obj-m += $(MODULES)/$(MODULE_2).o 
-obj-m += $(MODULES)/$(MODULE_3).o 
+obj-m += $(IOCTL)/$(MODULE_3).o 
 
 
 # Shared path
@@ -30,7 +31,7 @@ print_node_pid:
 
 openctl:
 	make -C $(KERNELDIR_LKP) M=$(PWD) modules
-	cp $(MODULES)/$(MODULE_3).ko $(SHARE_PATH)/$(MODULE_3).ko
+	cp $(IOCTL)/$(MODULE_3).ko $(SHARE_PATH)/$(MODULE_3).ko
 
 # Programmes C
 benchmark_file:
@@ -43,17 +44,18 @@ map_file:
 	gcc $(BENCHMARK)/map_file.c -D_GNU_SOURCE -static -o $(SHARE_PATH)/map_file
 
 add_open_pid_tab:
-	gcc $(BENCHMARK)/add_open_pid_tab.c -D_GNU_SOURCE -static -o $(SHARE_PATH)/add_open_pid_tab
+	gcc $(IOCTL)/add_open_pid_tab.c -D_GNU_SOURCE -static -o $(SHARE_PATH)/add_open_pid_tab
 
 clean:
 	make -C $(KERNELDIR_LKP) M=$(PWD) clean
 	rm -f $(SHARE_PATH)/$(MODULE_1).ko
 	rm -f $(SHARE_PATH)/$(MODULE_2).ko
-	rm -f $(SHARE_PATH)/$(MODULE_3).ko
+	# rm -f $(SHARE_PATH)/$(MODULE_3).ko
 	rm -f $(SHARE_PATH)/benchmark_file
 	rm -f $(SHARE_PATH)/benchmark_pid
 	rm -f $(SHARE_PATH)/map_file
 	rm -f $(SHARE_PATH)/add_open_pid_tab
 	rm -f $(MODULES)/*.mod.c $(MODULES)/*.mod $(MODULES)/*.o $(MODULES)/*.ko $(MODULES)/.*.cmd .*.cmd modules.order
+	rm -f $(IOCTL)/*.mod.c $(IOCTL)/*.mod $(IOCTL)/*.o $(IOCTL)/*.ko $(IOCTL)/.*.cmd
 	rm -rf .tmp_versions
 
