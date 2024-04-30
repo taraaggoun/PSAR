@@ -69,23 +69,31 @@ int load_memory(char *filepath)
 void read_file(int fd, int cpu) 
 {
 	// Retrieve the start time
-	clock_t time_start = clock();
+	struct timespec start = { 0 };
+	if (clock_gettime(CLOCK_MONOTONIC, &start) < 0) {
+		printf("Erreur clock get time\n");
+		return;
+	}
 
 	char buf;
 	// Get end of file
-	int end = lseek(fd, 0, SEEK_END);
+	int off_end = lseek(fd, 0, SEEK_END);
 
 	// Read randomly in the file
 	for(int i = 0; i < 10000; i++) {
 		// Choose a location randomly within the file
-		int offset = rand() % end;
+		int offset = rand() %off_end;
 		lseek(fd, offset, SEEK_SET);
 		read(fd, &buf, 1);
 	}
 
 	// Get the end time
-	clock_t time_end = clock();
-	printf("Time of execution : %d in core %d\n", (int)(time_end - time_start), cpu);
+	struct timespec end = { 0 };
+	if (clock_gettime(CLOCK_MONOTONIC, &end) < 0) {
+		printf("Erreur clock get time\n");
+		return;
+	}
+	printf("Time of execution : %d ns in core %ld\n", (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec) ,cpu);
 }
 
 /**
@@ -116,19 +124,22 @@ int run_test(int cpu1, int cpu2, int fd)
 int main(int argc, char **argv)
 {
 	srand(time(NULL));
-	int cpu1 = 3;
-	int cpu2 = 6;
+	int cpu1 = 0;
+	int cpu2 = 2;
+	int cpu3 = 21;
  
 	// argument manager
-	if (argc < 2 || argc > 4) {
+	if (argc < 2 || argc > 5) {
 		printf("Error, it need at least one argument : <FilePath> !\n");
-		printf("Optionally one or two integer for the <name of core>\n");
+		printf("Optionally one, two or three integer for the <name of core>\n");
 		return 1;
 	}
 	if (argc >= 3)
 		cpu1 = atoi(argv[2]);
-	if (argc == 4)
+	if (argc >= 4)
 		cpu2 = atoi(argv[3]);
+	if (argc == 5)
+		cpu3 = atoi(argv[4]);
 
 	// Assign process to a core
 	if (set_core(cpu1) < 0) {
@@ -148,7 +159,7 @@ int main(int argc, char **argv)
 	}
 
 	printf("---------- Test local-distant ----------\n");
-	if (run_test(cpu1, cpu2, fd) < 0) {
+	if (run_test(cpu1, cpu3, fd) < 0) {
 		close(fd);
 		return 1;
 	}
