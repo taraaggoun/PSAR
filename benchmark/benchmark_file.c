@@ -17,8 +17,7 @@
 */
 int set_core(int cpu)
 {
-	cpu_set_t set;
-	CPU_ZERO(&set);
+	cpu_set_t set; CPU_ZERO(&set);
 	// Add to set the number of proc
 	CPU_SET(cpu, &set);
 
@@ -27,6 +26,15 @@ int set_core(int cpu)
 		printf("Error on setaffinity\n");
 		return -1;
 	}
+
+	// Vérify that sched_set_affinity worked
+	cpu_set_t mask;
+	if (sched_getaffinity(getpid(), sizeof(mask), &mask) == -1) {
+		printf("Error on setaffinity\n");
+		return -1;
+	}
+	if (!CPU_ISSET(cpu, &mask)) 
+		printf("Error : process not in the right cpu\n");
 	return 0;
 }
 
@@ -93,7 +101,7 @@ void read_file(int fd, int cpu)
 		printf("Erreur clock get time\n");
 		return;
 	}
-	printf("Time of execution : %d ns in core %ld\n", (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec) ,cpu);
+	printf("Time of execution : %ld ns in core %d\n", (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec) ,cpu);
 }
 
 /**
@@ -108,24 +116,25 @@ int run_test(int cpu1, int cpu2, int fd)
 	}
 	if (f == 0) { // Child
 		// Change core of child
-		if (set_core(cpu1) < -1) {
+		if (set_core(cpu2) < -1) {
 			printf("Error set_core run_test\n");
 			return -1;
 		}
-		read_file(fd, cpu1);
+		read_file(fd, cpu2);
 		exit(EXIT_SUCCESS);
 	}
 	else { // Parent
-		read_file(fd, cpu2);
+		read_file(fd, cpu1);
 		wait(NULL);
 	}
+	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	srand(time(NULL));
 	int cpu1 = 0;
-	int cpu2 = 2;
+	int cpu2 = 12;
 	int cpu3 = 21;
  
 	// argument manager

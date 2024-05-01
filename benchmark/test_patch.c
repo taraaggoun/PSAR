@@ -48,7 +48,7 @@ void read_file(char *filename)
 		// Choose a location randomly within the file
 		int offset = rand() % end;
 		lseek(fd, offset, SEEK_SET);
-		read(fd, &buf, 1);diff --color -Nur
+		read(fd, &buf, 1);
 	}
 
 	// Get the end time
