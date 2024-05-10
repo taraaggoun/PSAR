@@ -130,6 +130,18 @@ int run_test(int cpu1, int cpu2, int fd)
 	return 0;
 }
 
+/**
+ * Empty caches
+*/
+static void empty_caches(void) {
+	int fd = open("/proc/sys/vm/drop_caches", O_WRONLY);
+	if (write(fd, "1", 1) < 0) {
+		perror("write in empty_cache");
+		exit(EXIT_FAILURE);
+	}
+	close(fd);
+}
+
 int main(int argc, char **argv)
 {
 	srand(time(NULL));
@@ -156,7 +168,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	
 	// load file in memory
+	empty_caches();
 	int fd = load_memory(argv[1]);
 	if ( fd == -1)
 		return 1;
@@ -166,6 +180,12 @@ int main(int argc, char **argv)
 		close(fd);
 		return 1;
 	}
+
+	// load file in memory
+	empty_caches();
+	load_memory(argv[1]);
+	if ( fd == -1)
+		return 1;
 
 	printf("---------- Test local-distant ----------\n");
 	if (run_test(cpu1, cpu3, fd) < 0) {

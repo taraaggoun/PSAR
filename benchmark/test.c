@@ -57,28 +57,61 @@ void error(const char *msg)
 }
 
 /**
- * Load a file in node page cache
+ * Read the file filepath sequentially to load it into memory
 */
-void load_memory(void)
+int load_memory(void) 
 {
-	set_core_node();
-
 	int fd = open(file_path, O_RDONLY);
-	if (fd < 0)
-		error("Error on open");
+	if (fd == -1) {
+		printf("The argument need to be a valid path to the file \n");
+		return -1;
+	}
+	char buf;
 
-	struct stat file_info;
-	if (stat(file_path, &file_info) != 0)
-		error("Error on stat");
-
-	file_size = file_info.st_size;
-	void *file_data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (file_data == MAP_FAILED)
-		error("Error on mmap");
-
-	close(fd);
-	fd = -1;
+	off_t end = lseek(fd, 0, SEEK_END);
+	// Sequential reading of the file to map it into memory
+	lseek(fd, 0, SEEK_SET);
+	while (1) {
+		int ret = read(fd, &buf, 1);
+		if (ret == 0) {
+			break;
+		}
+		if (ret == -1) {
+			printf("Error while reading the file \n");
+			return -1;
+		}
+		// Move the pointer to the next page
+		// Return NULL if we reach the end of the file
+		off_t cur =  lseek(fd, 1 << 12, SEEK_CUR);
+		if (cur == end || cur == 0)
+			break;
+	}
+	return fd;
 }
+
+// /**
+//  * Load a file in node page cache
+// */
+// void load_memory(void)
+// {
+// 	set_core_node();
+
+// 	int fd = open(file_path, O_RDONLY);
+// 	if (fd < 0)
+// 		error("Error on open");
+
+// 	struct stat file_info;
+// 	if (stat(file_path, &file_info) != 0)
+// 		error("Error on stat");
+
+// 	file_size = file_info.st_size;
+// 	void *file_data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+// 	if (file_data == MAP_FAILED)
+// 		error("Error on mmap");
+
+// 	close(fd);
+// 	fd = -1;
+// }
 
 // /**
 //  * Read the file randomly and calculate the reading time
