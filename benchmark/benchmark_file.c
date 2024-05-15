@@ -184,7 +184,7 @@ int main(int argc, char **argv)
 	// load file in memory
 	empty_caches();
 	load_memory(argv[1]);
-	if ( fd == -1)
+	if (fd == -1)
 		return 1;
 
 	printf("---------- Test local-distant ----------\n");
