@@ -8,8 +8,14 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+
+#define IOCTL_MAGIC 'N'
+#define PIDW _IOW(IOCTL_MAGIC, 0, char*)
 
 static int fd = -1;
+static int fd_data = -1;
 static int node = 0;
 static int file_size = 0;
 static char *file_data = NULL;
@@ -20,7 +26,7 @@ static char *file_path = NULL;
 */
 static void error(const char *msg)
 {
-	dprintf(STDERR_FILENO, "%s\n", msg);
+	dprintf(STDERR_FILENO, "Error: %s\n", msg);
 	if (fd < 0)
 		close(fd);
 	if (file_data != NULL)
@@ -59,9 +65,9 @@ static void set_core_except_node()
 
 static void set_core(int is_local) {
 	if (is_local)
-		set_core_node(node);
+		set_core_node();
 	else
-		set_core_except_node(node);
+		set_core_except_node();
 }
 
 /**
@@ -152,7 +158,9 @@ void read_file(char *buf)
 		error("Error on clock get end time");
 	size_t time = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
 	printf("Time of read séquentielle: %ld ns ", time);
-
+	char buffer[200];
+	snprintf(buffer, 200, "%lu\n", time);
+	write(fd_data,buffer,strlen(buffer));
 	close(fd);
 	fd = -1;
 }
@@ -181,8 +189,11 @@ void read_file_alea(char *buf)
 	struct timespec end = { 0 };
 	if (clock_gettime(CLOCK_MONOTONIC, &end) < 0)
 		error("clock get end time\n");
-	printf("Time of read alea : %ld ns ", (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec));
-
+	size_t time = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
+	printf("Time of read alea : %ld ns ", time);
+	char buffer[200];
+	snprintf(buffer, 200, "%lu\n", time);
+	write(fd_data,buffer,strlen(buffer));
 	close(fd);
 	fd = -1;
 }
@@ -209,22 +220,33 @@ void print_node(void) {
 		printf("in distant\n");
 }
 
+void insert_pid_ioctl(pid_t pid) {
+	int fd = open("/dev/openctl", O_WRONLY);
+	if (fd == -1)
+		error("open openctl");
+
+	if (ioctl(fd, PIDW, pid) == -1)
+		error("ioctl");
+
+	close(fd);
+	fd = -1;
+}
+
 void get_read_time(int node_r, int mode)
 {
-	empty_caches();
 	set_core(1);
+	empty_caches();
 	load_memory_read();
 	
 	pid_t f = fork();
 	if (f < 0)
 		error("fork");
 	if (f == 0) { // Child
-		printf("pid : %d\n", getpid);
-		sleep(5);
+		// insert_pid_ioctl(getpid());
+		set_core(node_r);
 		char *buffer = numa_alloc_onnode(file_size, node_r);
 		memset(buffer, 0, file_size);
 
-		set_core(node_r);
 		if (mode)
 			read_file(buffer);
 		else
@@ -235,6 +257,71 @@ void get_read_time(int node_r, int mode)
 	}
 	wait(NULL);
 }
+
+void loop_reading(char *buf) {
+	fd = open(file_path, O_RDONLY);
+	if (fd < 0)
+		error("open read file alea");
+	int i = 100;
+	while(i--) {
+		// Read randomly in the file
+		for(int i = 0; i < 10000; i++) {
+			// Choose a location randomly within the file
+			int offset = rand() % file_size;
+			// int read_len = rand() % (file_size - off_end);
+			lseek(fd, offset, SEEK_SET);
+			read(fd, buf, 0x2000);
+		}
+	}
+}
+
+void get_read_time_proc(int node_r, int mode, int n)
+{
+	set_core(1);
+	empty_caches();
+	load_memory_read();
+	
+	for(int i = 0; i < n; i++) {
+		pid_t f = fork();
+		if (f < 0)
+			error("fork");
+		if (f == 0) { // Child
+			// insert_pid_ioctl(getpid());
+			set_core(node_r);
+			char *buffer = numa_alloc_onnode(file_size, node_r);
+			memset(buffer, 0, file_size);
+			loop_reading(buffer);
+			exit(EXIT_SUCCESS);
+		}
+	}
+
+	pid_t f = fork();
+	if (f < 0)
+		error("fork");
+	if (f == 0) { // Child
+		sleep(1);
+		set_core(node_r);
+		char *buffer = numa_alloc_onnode(file_size, node_r);
+		memset(buffer, 0, file_size);
+
+		if (mode)
+			read_file(buffer);
+		else
+			read_file_alea(buffer);
+		print_node();
+		numa_free(buffer, file_size);
+		exit(EXIT_SUCCESS);
+	}
+	for (int i = 0; i < n; i++)
+		wait(NULL);
+}
+
+// void load_memory_multiple()
+
+// void get_read_time_file(int node_r, int mode, int n)
+// {
+
+// }
 
 int main(int argc, char *argv[])
 {
@@ -256,12 +343,81 @@ int main(int argc, char *argv[])
 		error("Error on stat");
 	file_size = st.st_size;
 
-	printf("------------ Test local ------------\n");
-	get_read_time(1, 1);
-	get_read_time(1, 0);
-	printf("---------- Test distant ----------\n");
-	get_read_time(0, 1);
-	get_read_time(0, 0);
 
+	printf("------------ Test one file ------------\n");
+	printf("------------ Test local ------------\n");
+	fd_data = open("test_local_seq", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 100; i++)
+		get_read_time(1, 1);
+
+	close(fd_data);
+	fd_data = open("test_local_alea", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 100; i++)
+		get_read_time(1, 0);
+
+	close(fd_data);
+	printf("---------- Test distant ----------\n");
+	fd_data = open("test_distant_seq", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 100; i++) {
+		get_read_time(0, 1);
+	}
+	close(fd_data);
+	fd_data = open("test_distant_alea", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 100; i++) {
+		get_read_time(0, 0);
+	}
+	close(fd_data);
+
+	printf("------------ Test lot of files ------------\n");
+	printf("------------ Test local ------------\n");
+	fd_data = open("test_local_seq_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_proc(1, 1, 10);
+	close(fd_data);
+	fd_data = open("test_local_alea_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_proc(1, 0, 10);
+	close(fd_data);
+	// fd_data = open("test_local_seq_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(1, 1, 100);
+	// close(fd_data);
+	// fd_data = open("test_local_alea_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(1, 0, 100);
+	// close(fd_data);
+	// fd_data = open("test_local_seq_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(1, 1, 1000);
+	// close(fd_data);
+	// fd_data = open("test_local_alea_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(1, 0, 1000);
+	close(fd_data);
+	printf("---------- Test distant ----------\n");
+	fd_data = open("test_distant_seq_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_proc(0, 1, 10);
+	close(fd_data);
+	fd_data = open("test_distant_alea_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_proc(0, 0, 10);
+	close(fd_data);
+	// fd_data = open("test_distant_seq_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(0, 1, 100);
+	// close(fd_data);
+	// fd_data = open("test_distant_alea_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(0, 0, 100);
+	// close(fd_data);
+	// fd_data = open("test_distant_seq_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(0, 1, 1000);
+	// close(fd_data);
+	// fd_data = open("test_distant_alea_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	// for (int i = 0; i < 20; i++)
+	// 	get_read_time_proc(0, 0, 1000);
+	// close(fd_data);
 	return 0;
 }
