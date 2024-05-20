@@ -7,9 +7,6 @@ apt install libnuma-dev
 # Installer lstopo
 apt install hwloc
 
-# Disable Numa Balencing
-echo "0" > /proc/sys/kernel/numa_balancing
-
 # Create repertory for file
 mkdir -p res
 

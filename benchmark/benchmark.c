@@ -87,6 +87,22 @@ static void empty_caches(void) {
 		error("write in empty_cache");
 	close(fd);
 	fd = -1;
+	printf("cache are empty\n");
+}
+
+/**
+ * If c equal 0 disable numa balencing
+ * If c equal 1 enable numa balencing
+*/
+static void write_numa_balencing(char c) {
+	fd = open("/proc/sys/kernel/numa_balancing", O_WRONLY);
+	if (fd == -1)
+		error("open numa balencing");
+	if (write(fd, &c, 1) < 0)
+		error("write in numa balencing");
+	close(fd);
+	fd = -1;
+	printf("%c write in /proc/sys/kernel/numa_balancing\n", c);
 }
 
 /**
@@ -102,6 +118,7 @@ void insert_pid_ioctl(pid_t pid) {
 
 	close(fd);
 	fd = -1;
+	printf("%d add in liste\n", pid);
 }
 
 /**
@@ -138,44 +155,51 @@ void load_memory(void) {
 	}
 	close(fd);
 	fd = -1;
+	printf("file load in memory\n");
 }
 
-// void load_memory_multiple(int n) {
-// 	int fds[n];
-// 	for (int i = 0; i < n; i++) {
-// 		char pathname[10] = { 0 };
-// 		snprintf(pathname, 10, "file%d", i);
-// 		fds[i] = open(pathname, O_RDONLY);
-// 		if (fds[i] < 0)
-// 			error("open fds");
-// 	}
-// 	// Get EOF
-// 	off_t end = lseek(fds[0], 0, SEEK_END);
-// 	lseek(fds[0], 0, SEEK_SET);
+/**
+ * Load all the n files in memory
+*/
+void load_memory_multiple(int n) {
+	int fds[n];
+	for (int i = 0; i < n; i++) {
+		char pathname[13] = { 0 };
+		snprintf(pathname, 13, "res/file%d", i + 1);
+		fds[i] = open(pathname, O_RDONLY);
+		if (fds[i] < 0)
+			error("open fds");
+	}
+	printf("All file are open\n");
+	// Get EOF
+	off_t end = lseek(fds[0], 0, SEEK_END);
+	lseek(fds[0], 0, SEEK_SET);
 
-// 	char buf;
-// 	// Sequential reading of the file to map it into memory
-// 	for (int i = 0; i < n; i++) {
-// 		while (1) {
-// 			int r = read(fd, &buf, 1);
-// 			if (r == 0)
-// 				break;
-// 			if (r == -1)
-// 				error("read in load memory with a read");
-
-// 			// Move the pointer to the next page
-// 			off_t cur =  lseek(fd, 1 << 12, SEEK_CUR);
-// 			if (cur < 0)
-// 				error("lseek to go to next page");
-
-// 			// Return NULL if we reach the end of the file
-// 			if (cur == end)
-// 				break;
-// 		}
-// 	}
-// 	close(fd);
-// 	fd = -1;
-// }
+	char buf;
+	// Sequential reading all the file to map them into memory
+	int is_done = 0;
+	while (1) {
+		for (int i = 0; i < n; i++) {
+			int r = read(fds[i], &buf, 1);
+			if (r == 0)
+				is_done = 1;
+			if (r == -1)
+				error("read in load memory with a read");
+			// Move the pointer to the next page
+			off_t cur =  lseek(fds[i], 1 << 12, SEEK_CUR);
+			if (cur < 0)
+				error("lseek to go to next page");
+			// Return NULL if we reach the end of the file
+			if (cur == end)
+				is_done = 1;
+		}
+		if (is_done)
+			break;
+	}
+	for (int i = 0; i < n; i++)
+		close(fds[i]);
+	printf("all file are load in memory\n");
+}
 
 /**
  * Read a file sequencially and get the time in a file
@@ -266,7 +290,8 @@ void get_read_time(int node_r, int mode)
 	if (f < 0)
 		error("fork");
 	if (f == 0) { // Child
-		// insert_pid_ioctl(getpid());
+		if (config != 1)
+			insert_pid_ioctl(getpid());
 		set_core(node_r);
 		char *buffer = numa_alloc_onnode(file_size, node_r);
 		memset(buffer, 0, file_size);
@@ -281,89 +306,122 @@ void get_read_time(int node_r, int mode)
 	wait(NULL);
 }
 
-// /**
-//  * while true read
-// */
-// void loop_reading(char *buf) {
-// 	fd = open(file_path, O_RDONLY);
-// 	if (fd < 0)
-// 		error("open read file alea");
-// 	int i = 100;
-// 	while(i--) {
-// 		// Read randomly in the file
-// 		for(int i = 0; i < 10000; i++) {
-// 			// Choose a location randomly within the file
-// 			int offset = rand() % file_size;
-// 			// int read_len = rand() % (file_size - off_end);
-// 			lseek(fd, offset, SEEK_SET);
-// 			read(fd, buf, 0x2000);
-// 		}
-// 	}
-// }
+/**
+ * while true read
+*/
+void loop_reading(char *buf) {
+	fd = open(file_path, O_RDONLY);
+	if (fd < 0)
+		error("open read file alea");
+	int i = 100;
+	while(i--) {
+		// Read randomly in the file
+		for(int i = 0; i < 10000; i++) {
+			// Choose a location randomly within the file
+			int offset = rand() % file_size;
+			// int read_len = rand() % (file_size - off_end);
+			lseek(fd, offset, SEEK_SET);
+			read(fd, buf, 0x2000);
+		}
+	}
+}
 
-// /**
-//  * get time while n process read the file
-// */
-// void get_read_time_proc(int node_r, int mode, int n)
-// {
-// 	set_core(1);
-// 	empty_caches();
-// 	load_memory_read();
+/**
+ * get time while n process read the file
+*/
+void get_read_time_proc(int node_r, int mode, int n)
+{
+	set_core(1);
+	empty_caches();
+	load_memory();
 	
-// 	for(int i = 0; i < n; i++) {
-// 		pid_t f = fork();
-// 		if (f < 0)
-// 			error("fork");
-// 		if (f == 0) { // Child
-// 			// insert_pid_ioctl(getpid());
-// 			set_core(node_r);
-// 			char *buffer = numa_alloc_onnode(file_size, node_r);
-// 			memset(buffer, 0, file_size);
-// 			loop_reading(buffer);
-// 			exit(EXIT_SUCCESS);
-// 		}
-// 	}
+	for(int i = 0; i < n; i++) {
+		pid_t f = fork();
+		if (f < 0)
+			error("fork");
+		if (f == 0) { // Child
+			set_core(node_r);
+			char *buffer = numa_alloc_onnode(file_size, node_r);
+			memset(buffer, 0, file_size);
+			loop_reading(buffer);
+			exit(EXIT_SUCCESS);
+		}
+	}
 
-// 	pid_t f = fork();
-// 	if (f < 0)
-// 		error("fork");
-// 	if (f == 0) { // Child
-// 		sleep(1);
-// 		set_core(node_r);
-// 		char *buffer = numa_alloc_onnode(file_size, node_r);
-// 		memset(buffer, 0, file_size);
+	pid_t f = fork();
+	if (f < 0)
+		error("fork");
+	if (f == 0) { // Child
+		if (config != 1)
+			insert_pid_ioctl(getpid());
+		set_core(node_r);
+		char *buffer = numa_alloc_onnode(file_size, node_r);
+		memset(buffer, 0, file_size);
 
-// 		if (mode)
-// 			read_file(buffer);
-// 		else
-// 			read_file_alea(buffer);
-// 		print_node();
-// 		numa_free(buffer, file_size);
-// 		exit(EXIT_SUCCESS);
-// 	}
-// 	for (int i = 0; i < n; i++)
-// 		wait(NULL);
-// }
+		if (mode)
+			read_file(buffer);
+		else
+			read_file_alea(buffer);
+		numa_free(buffer, file_size);
+		exit(EXIT_SUCCESS);
+	}
+	for (int i = 0; i < n; i++)
+		wait(NULL);
+}
 
-// void get_read_time_file(int node_r, int mode, int n)
-// {
+/**
+ * Load n file in the memory 
+ * Then read a file
+*/
+void get_read_time_file(int node_r, int mode, int n)
+{
+	set_core(1);
+	empty_caches();
+	if (n != 0)
+		load_memory_multiple(n);
+	load_memory();
 
-// }
+	pid_t f = fork();
+	if (f < 0)
+		error("fork");
+	if (f == 0) { // Child
+		if (config != 1)
+			insert_pid_ioctl(getpid());
+		set_core(node_r);
+		char *buffer = numa_alloc_onnode(file_size, node_r);
+		memset(buffer, 0, file_size);
+
+		if (mode)
+			read_file(buffer);
+		else
+			read_file_alea(buffer);
+		numa_free(buffer, file_size);
+		exit(EXIT_SUCCESS);
+	}
+	wait(NULL);
+}
 
 int main(int argc, char *argv[])
 {
 	// Parameters managment
-	if (argc != 4) {
-		printf("Usage: %s <file_path> <num config> <num node>\n", argv[0]);
+	if (argc != 3) {
+		printf("Usage: %s <num config> <num node>\n", argv[0]);
 		return EXIT_FAILURE;
 	}
 
 	fd = -1;
-	file_path = argv[1];
-	config = atoi(argv[2]);
-	node = atoi(argv[3]);
+	file_path = "res/file";
+	config = atoi(argv[1]);
+	node = atoi(argv[2]);
 
 	srand(time(NULL));
+
+	// Disable NUMA BALENCING
+	if (config != 3)
+		write_numa_balencing('0');
+	// Enable NUMA BALENCING
+	else
+		write_numa_balencing('1');
 
 	// Get file_size
 	struct stat st;
@@ -371,81 +429,80 @@ int main(int argc, char *argv[])
 		error("Error on stat");
 	file_size = st.st_size;
 
+	char logname[15] = { 0 };
 
 	printf("------------ Test read on a file ------------\n");
 	printf("------------ Test local ------------\n");
-	fd_data = open("test_local_seq", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	snprintf(logname, 14, "local_seq_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 100; i++)
 		get_read_time(1, 1);
 
 	close(fd_data);
-	fd_data = open("test_local_alea", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	snprintf(logname, 15, "local_alea_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 100; i++)
 		get_read_time(1, 0);
 
 	close(fd_data);
 	printf("---------- Test distant ----------\n");
-	fd_data = open("test_distant_seq", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	snprintf(logname, 15, "distant_seq_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 100; i++) {
 		get_read_time(0, 1);
 	}
 	close(fd_data);
-	fd_data = open("test_distant_alea", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	snprintf(logname, 15, "distant_alea_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 100; i++) {
 		get_read_time(0, 0);
 	}
 	close(fd_data);
 
-	/* printf("------------ Test lot of files ------------\n");
-	printf("------------ Test local ------------\n");
-	fd_data = open("test_local_seq_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+	printf("------------ Test read with a lot of file ------------\n");
+	snprintf(logname, 15, "f0_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_file(1, 1, 0);
+
+	snprintf(logname, 15, "f10_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_file(1, 1, 10);
+
+	snprintf(logname, 15, "f100_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_file(1, 1, 100);
+	
+	snprintf(logname, 15, "f1000_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_file(1, 1, 1000);
+
+	printf("------------ Test read with a lot of process ------------\n");
+	snprintf(logname, 15, "p0_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+	for (int i = 0; i < 20; i++)
+		get_read_time_proc(1, 1, 0);
+	
+	snprintf(logname, 15, "p10_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 20; i++)
 		get_read_time_proc(1, 1, 10);
 	close(fd_data);
-	fd_data = open("test_local_alea_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+
+	snprintf(logname, 15, "p100_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 20; i++)
-		get_read_time_proc(1, 0, 10);
+		get_read_time_proc(1, 1, 100);
 	close(fd_data);
-	// fd_data = open("test_local_seq_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(1, 1, 100);
-	// close(fd_data);
-	// fd_data = open("test_local_alea_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(1, 0, 100);
-	// close(fd_data);
-	// fd_data = open("test_local_seq_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(1, 1, 1000);
-	// close(fd_data);
-	// fd_data = open("test_local_alea_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(1, 0, 1000);
-	close(fd_data);
-	printf("---------- Test distant ----------\n");
-	fd_data = open("test_distant_seq_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
+
+	snprintf(logname, 15, "p1000_%d", config);
+	fd_data = open(logname, O_CREAT | O_TRUNC | O_WRONLY, 0777);
 	for (int i = 0; i < 20; i++)
-		get_read_time_proc(0, 1, 10);
+		get_read_time_proc(1, 1, 1000);
 	close(fd_data);
-	fd_data = open("test_distant_alea_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	for (int i = 0; i < 20; i++)
-		get_read_time_proc(0, 0, 10);
-	close(fd_data);
-	// fd_data = open("test_distant_seq_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(0, 1, 100);
-	// close(fd_data);
-	// fd_data = open("test_distant_alea_p100_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(0, 0, 100);
-	// close(fd_data);
-	// fd_data = open("test_distant_seq_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(0, 1, 1000);
-	// close(fd_data);
-	// fd_data = open("test_distant_alea_p1000_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
-	// for (int i = 0; i < 20; i++)
-	// 	get_read_time_proc(0, 0, 1000);
-	// close(fd_data);
- */	return 0;
+
+	return 0;
 }
