@@ -13,9 +13,12 @@ echo "0" > /proc/sys/kernel/numa_balancing
 # Create repertory for file
 mkdir -p res
 
-# Create 1000 files of size 50Mo
+# Create a file of size 50Mo
+dd if=/dev/zero of=res/file bs=1M count=50
+
+# Create 1000 files of size 1Mo
 for ((i=1; i<=1000; i++))
 do
-    dd if=/dev/zero of=res/file$i bs=1M count=50
+    dd if=/dev/zero of=res/file$i bs=1M count=1
 
 done

@@ -11,11 +11,14 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 
+// IOCTL
 #define IOCTL_MAGIC 'N'
 #define PIDW _IOW(IOCTL_MAGIC, 0, char*)
 
+// GLOBAL VARIABLE
 static int fd = -1;
 static int fd_data = -1;
+static int config = 1;
 static int node = 0;
 static int file_size = 0;
 static char *file_data = NULL;
@@ -63,6 +66,9 @@ static void set_core_except_node()
 	numa_free_nodemask(nodemask);
 }
 
+/**
+ * Set process in adequat core
+*/
 static void set_core(int is_local) {
 	if (is_local)
 		set_core_node();
@@ -83,7 +89,25 @@ static void empty_caches(void) {
 	fd = -1;
 }
 
-void load_memory_read(void) {
+/**
+ * Insert the pid in the kernel array with ioctl
+*/
+void insert_pid_ioctl(pid_t pid) {
+	int fd = open("/dev/openctl", O_WRONLY);
+	if (fd == -1)
+		error("open openctl");
+
+	if (ioctl(fd, PIDW, pid) == -1)
+		error("ioctl");
+
+	close(fd);
+	fd = -1;
+}
+
+/**
+ * Load the file in memory
+*/
+void load_memory(void) {
 	fd = open(file_path, O_RDONLY);
 	if (fd == -1)
 		error("open in load memory with a read");
@@ -116,19 +140,46 @@ void load_memory_read(void) {
 	fd = -1;
 }
 
-void load_memory_mmap(void) {
-	fd = open(file_path, O_RDONLY);
-	if (fd < 0)
-		error("open in load memory with mmap");
+// void load_memory_multiple(int n) {
+// 	int fds[n];
+// 	for (int i = 0; i < n; i++) {
+// 		char pathname[10] = { 0 };
+// 		snprintf(pathname, 10, "file%d", i);
+// 		fds[i] = open(pathname, O_RDONLY);
+// 		if (fds[i] < 0)
+// 			error("open fds");
+// 	}
+// 	// Get EOF
+// 	off_t end = lseek(fds[0], 0, SEEK_END);
+// 	lseek(fds[0], 0, SEEK_SET);
 
-	file_data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (file_data == MAP_FAILED)
-		error("Error on mmap");
+// 	char buf;
+// 	// Sequential reading of the file to map it into memory
+// 	for (int i = 0; i < n; i++) {
+// 		while (1) {
+// 			int r = read(fd, &buf, 1);
+// 			if (r == 0)
+// 				break;
+// 			if (r == -1)
+// 				error("read in load memory with a read");
 
-	close(fd);
-	fd = -1;
-}
+// 			// Move the pointer to the next page
+// 			off_t cur =  lseek(fd, 1 << 12, SEEK_CUR);
+// 			if (cur < 0)
+// 				error("lseek to go to next page");
 
+// 			// Return NULL if we reach the end of the file
+// 			if (cur == end)
+// 				break;
+// 		}
+// 	}
+// 	close(fd);
+// 	fd = -1;
+// }
+
+/**
+ * Read a file sequencially and get the time in a file
+*/
 void read_file(char *buf)
 {
 	fd = open(file_path, O_RDONLY);
@@ -157,7 +208,7 @@ void read_file(char *buf)
 	if (clock_gettime(CLOCK_MONOTONIC, &end) < 0)
 		error("Error on clock get end time");
 	size_t time = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
-	printf("Time of read séquentielle: %ld ns ", time);
+	printf("Time of read séquentielle: %ld ns \n", time);
 	char buffer[200];
 	snprintf(buffer, 200, "%lu\n", time);
 	write(fd_data,buffer,strlen(buffer));
@@ -165,6 +216,10 @@ void read_file(char *buf)
 	fd = -1;
 }
 
+/**
+ * Read a file randomnly
+ * get the time in a file
+*/
 void read_file_alea(char *buf)
 {
 	fd = open(file_path, O_RDONLY);
@@ -190,7 +245,7 @@ void read_file_alea(char *buf)
 	if (clock_gettime(CLOCK_MONOTONIC, &end) < 0)
 		error("clock get end time\n");
 	size_t time = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
-	printf("Time of read alea : %ld ns ", time);
+	printf("Time of read alea : %ld ns \n", time);
 	char buffer[200];
 	snprintf(buffer, 200, "%lu\n", time);
 	write(fd_data,buffer,strlen(buffer));
@@ -198,45 +253,14 @@ void read_file_alea(char *buf)
 	fd = -1;
 }
 
-void print_node(void) {
-	struct bitmask *mask = numa_allocate_cpumask();
-	if (mask == NULL)
-		error("mask null in print node");
-	if (numa_sched_getaffinity(getpid(), mask) == -1) {
-		numa_free_cpumask(mask);
-		error("getaffinity in print node\n");
-	}
-
-	int cpu;
-	for (cpu = 0; cpu < numa_num_configured_cpus(); cpu++)
-		if (numa_bitmask_isbitset(mask, cpu))
-			break;
-
-	numa_free_cpumask(mask);
-	
-	if (numa_node_of_cpu(cpu) == node)
-		printf("in local\n");
-	else
-		printf("in distant\n");
-}
-
-void insert_pid_ioctl(pid_t pid) {
-	int fd = open("/dev/openctl", O_WRONLY);
-	if (fd == -1)
-		error("open openctl");
-
-	if (ioctl(fd, PIDW, pid) == -1)
-		error("ioctl");
-
-	close(fd);
-	fd = -1;
-}
-
+/**
+ * Get time when we read
+*/
 void get_read_time(int node_r, int mode)
 {
 	set_core(1);
 	empty_caches();
-	load_memory_read();
+	load_memory();
 	
 	pid_t f = fork();
 	if (f < 0)
@@ -251,72 +275,75 @@ void get_read_time(int node_r, int mode)
 			read_file(buffer);
 		else
 			read_file_alea(buffer);
-		print_node();
 		numa_free(buffer, file_size);
 		exit(EXIT_SUCCESS);
 	}
 	wait(NULL);
 }
 
-void loop_reading(char *buf) {
-	fd = open(file_path, O_RDONLY);
-	if (fd < 0)
-		error("open read file alea");
-	int i = 100;
-	while(i--) {
-		// Read randomly in the file
-		for(int i = 0; i < 10000; i++) {
-			// Choose a location randomly within the file
-			int offset = rand() % file_size;
-			// int read_len = rand() % (file_size - off_end);
-			lseek(fd, offset, SEEK_SET);
-			read(fd, buf, 0x2000);
-		}
-	}
-}
+// /**
+//  * while true read
+// */
+// void loop_reading(char *buf) {
+// 	fd = open(file_path, O_RDONLY);
+// 	if (fd < 0)
+// 		error("open read file alea");
+// 	int i = 100;
+// 	while(i--) {
+// 		// Read randomly in the file
+// 		for(int i = 0; i < 10000; i++) {
+// 			// Choose a location randomly within the file
+// 			int offset = rand() % file_size;
+// 			// int read_len = rand() % (file_size - off_end);
+// 			lseek(fd, offset, SEEK_SET);
+// 			read(fd, buf, 0x2000);
+// 		}
+// 	}
+// }
 
-void get_read_time_proc(int node_r, int mode, int n)
-{
-	set_core(1);
-	empty_caches();
-	load_memory_read();
+// /**
+//  * get time while n process read the file
+// */
+// void get_read_time_proc(int node_r, int mode, int n)
+// {
+// 	set_core(1);
+// 	empty_caches();
+// 	load_memory_read();
 	
-	for(int i = 0; i < n; i++) {
-		pid_t f = fork();
-		if (f < 0)
-			error("fork");
-		if (f == 0) { // Child
-			// insert_pid_ioctl(getpid());
-			set_core(node_r);
-			char *buffer = numa_alloc_onnode(file_size, node_r);
-			memset(buffer, 0, file_size);
-			loop_reading(buffer);
-			exit(EXIT_SUCCESS);
-		}
-	}
+// 	for(int i = 0; i < n; i++) {
+// 		pid_t f = fork();
+// 		if (f < 0)
+// 			error("fork");
+// 		if (f == 0) { // Child
+// 			// insert_pid_ioctl(getpid());
+// 			set_core(node_r);
+// 			char *buffer = numa_alloc_onnode(file_size, node_r);
+// 			memset(buffer, 0, file_size);
+// 			loop_reading(buffer);
+// 			exit(EXIT_SUCCESS);
+// 		}
+// 	}
 
-	pid_t f = fork();
-	if (f < 0)
-		error("fork");
-	if (f == 0) { // Child
-		sleep(1);
-		set_core(node_r);
-		char *buffer = numa_alloc_onnode(file_size, node_r);
-		memset(buffer, 0, file_size);
+// 	pid_t f = fork();
+// 	if (f < 0)
+// 		error("fork");
+// 	if (f == 0) { // Child
+// 		sleep(1);
+// 		set_core(node_r);
+// 		char *buffer = numa_alloc_onnode(file_size, node_r);
+// 		memset(buffer, 0, file_size);
 
-		if (mode)
-			read_file(buffer);
-		else
-			read_file_alea(buffer);
-		print_node();
-		numa_free(buffer, file_size);
-		exit(EXIT_SUCCESS);
-	}
-	for (int i = 0; i < n; i++)
-		wait(NULL);
-}
-
-// void load_memory_multiple()
+// 		if (mode)
+// 			read_file(buffer);
+// 		else
+// 			read_file_alea(buffer);
+// 		print_node();
+// 		numa_free(buffer, file_size);
+// 		exit(EXIT_SUCCESS);
+// 	}
+// 	for (int i = 0; i < n; i++)
+// 		wait(NULL);
+// }
 
 // void get_read_time_file(int node_r, int mode, int n)
 // {
@@ -326,14 +353,15 @@ void get_read_time_proc(int node_r, int mode, int n)
 int main(int argc, char *argv[])
 {
 	// Parameters managment
-	if (argc != 3) {
-		printf("Usage: %s <file_path> <num node>\n", argv[0]);
+	if (argc != 4) {
+		printf("Usage: %s <file_path> <num config> <num node>\n", argv[0]);
 		return EXIT_FAILURE;
 	}
 
 	fd = -1;
 	file_path = argv[1];
-	node = atoi(argv[2]);
+	config = atoi(argv[2]);
+	node = atoi(argv[3]);
 
 	srand(time(NULL));
 
@@ -344,7 +372,7 @@ int main(int argc, char *argv[])
 	file_size = st.st_size;
 
 
-	printf("------------ Test one file ------------\n");
+	printf("------------ Test read on a file ------------\n");
 	printf("------------ Test local ------------\n");
 	fd_data = open("test_local_seq", O_CREAT|O_TRUNC|O_WRONLY,0777);
 	for (int i = 0; i < 100; i++)
@@ -368,7 +396,7 @@ int main(int argc, char *argv[])
 	}
 	close(fd_data);
 
-	printf("------------ Test lot of files ------------\n");
+	/* printf("------------ Test lot of files ------------\n");
 	printf("------------ Test local ------------\n");
 	fd_data = open("test_local_seq_p10_1", O_CREAT|O_TRUNC|O_WRONLY,0777);
 	for (int i = 0; i < 20; i++)
@@ -419,5 +447,5 @@ int main(int argc, char *argv[])
 	// for (int i = 0; i < 20; i++)
 	// 	get_read_time_proc(0, 0, 1000);
 	// close(fd_data);
-	return 0;
+ */	return 0;
 }
