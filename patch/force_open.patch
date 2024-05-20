@@ -1,6 +1,6 @@
-diff --color -Nur linux-6.5.7/fs/Makefile linux/fs/Makefile
---- linux-6.5.7/fs/Makefile	2024-05-15 15:25:28.005424916 +0200
-+++ linux/fs/Makefile	2024-05-15 15:09:15.212695482 +0200
+diff --color -Nur linux/fs/Makefile linux-6.5.7/fs/Makefile
+--- linux/fs/Makefile	2024-05-20 13:20:26.469978154 +0200
++++ linux-6.5.7/fs/Makefile	2024-05-20 13:20:42.639930835 +0200
 @@ -7,7 +7,7 @@
  # 
  
@@ -10,9 +10,9 @@ diff --color -Nur linux-6.5.7/fs/Makefile linux/fs/Makefile
  		char_dev.o stat.o exec.o pipe.o namei.o fcntl.o \
  		ioctl.o readdir.o select.o dcache.o inode.o \
  		attr.o bad_inode.o file.o filesystems.o namespace.o \
-diff --color -Nur linux-6.5.7/fs/open.c linux/fs/open.c
---- linux-6.5.7/fs/open.c	2024-05-15 15:25:28.007424918 +0200
-+++ linux/fs/open.c	2024-05-15 15:29:10.870592024 +0200
+diff --color -Nur linux/fs/open.c linux-6.5.7/fs/open.c
+--- linux/fs/open.c	2024-05-20 13:20:26.469978154 +0200
++++ linux-6.5.7/fs/open.c	2024-05-20 13:20:42.641930829 +0200
 @@ -1388,6 +1388,10 @@
  }
  EXPORT_SYMBOL(file_open_root);
@@ -38,10 +38,10 @@ diff --color -Nur linux-6.5.7/fs/open.c linux/fs/open.c
  	return fd;
  }
  
-diff --color -Nur linux-6.5.7/fs/opti_open.c linux/fs/opti_open.c
---- linux-6.5.7/fs/opti_open.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux/fs/opti_open.c	2024-05-15 15:12:49.869856439 +0200
-@@ -0,0 +1,101 @@
+diff --color -Nur linux/fs/opti_open.c linux-6.5.7/fs/opti_open.c
+--- linux/fs/opti_open.c	1970-01-01 01:00:00.000000000 +0100
++++ linux-6.5.7/fs/opti_open.c	2024-05-20 13:20:45.150923486 +0200
+@@ -0,0 +1,99 @@
 +#include <linux/mm.h>
 +#include <linux/fdtable.h>
 +#include <linux/rcupdate.h>
@@ -130,27 +130,24 @@ diff --color -Nur linux-6.5.7/fs/opti_open.c linux/fs/opti_open.c
 +*/
 +void mv_core(void)
 +{
-+	cpumask_t cpu_mask = { 0 };
-+	int tab[NR_CPUS] = { 0 };
-+	
-+	int core_id = get_core_pid(tab, NR_CPUS);
-+	if (core_id == -1)
++	int tab[NR_CPUS] = { 0 };	
++	int node_id = get_core_pid(tab, NR_CPUS);
++	if (node_id == -1)
 +		return;
-+	cpumask_set_cpu(core_id, &cpu_mask);
++	cpumask_t *mask = node_to_cpumask_map[node_id];
 +
 +	// Assign the program to all the cores in the set
-+	pr_info(" Go to core : %d\n", core_id);
-+	if (sched_setaffinity(current->pid, &cpu_mask) == -1)
++	pr_info(" Go to node : %d\n", node_id);
++	if (sched_setaffinity(current->pid, mask) == -1)
 +		pr_info("Error on setaffinity\n");
 +}
 \ No newline at end of file
-diff --color -Nur linux-6.5.7/include/linux/mm.h linux/include/linux/mm.h
---- linux-6.5.7/include/linux/mm.h	2024-05-15 15:25:28.010424920 +0200
-+++ linux/include/linux/mm.h	2024-05-15 15:08:20.606654536 +0200
+diff --color -Nur linux/include/linux/mm.h linux-6.5.7/include/linux/mm.h
+--- linux/include/linux/mm.h	2024-05-20 13:20:26.733977381 +0200
++++ linux-6.5.7/include/linux/mm.h	2024-05-20 13:20:42.644930820 +0200
 @@ -3922,4 +3922,5 @@
  
  #endif
  
 +void mv_core(void);
  #endif /* _LINUX_MM_H */
-
